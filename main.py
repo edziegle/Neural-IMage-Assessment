@@ -9,17 +9,9 @@ NIMA is released under the MIT license. See LICENSE for the fill license text.
 import argparse
 import os
 
-import numpy as np
-import matplotlib
-# matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-
-import torch
-import torch.autograd as autograd
 import torch.optim as optim
 
 import torchvision.transforms as transforms
-import torchvision.datasets as dsets
 import torchvision.models as models
 
 from torch.utils.tensorboard import SummaryWriter
@@ -30,24 +22,27 @@ from model.model import *
 
 
 def main(config):
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if torch.backends.mps.is_available() and torch.backends.mps.is_built():
+        device = torch.device("mps")
+        print("Using MPS backend")
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     writer = SummaryWriter()
 
     train_transform = transforms.Compose([
-        transforms.Scale(256),
+        transforms.Resize(256),
         transforms.RandomCrop(224),
         transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(), 
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], 
-            std=[0.229, 0.224, 0.225])])
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225])])
 
     val_transform = transforms.Compose([
-        transforms.Scale(256),
+        transforms.Resize(256),
         transforms.RandomCrop(224),
-        transforms.ToTensor(), 
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], 
-            std=[0.229, 0.224, 0.225])])
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225])])
 
     base_model = models.vgg16(pretrained=True)
     model = NIMA(base_model)
@@ -68,7 +63,7 @@ def main(config):
         {'params': model.features.parameters(), 'lr': conv_base_lr},
         {'params': model.classifier.parameters(), 'lr': dense_lr}],
         momentum=0.9
-        )
+    )
 
     param_num = 0
     for param in model.parameters():
@@ -81,9 +76,9 @@ def main(config):
         valset = AVADataset(csv_file=config.val_csv_file, root_dir=config.img_path, transform=val_transform)
 
         train_loader = torch.utils.data.DataLoader(trainset, batch_size=config.train_batch_size,
-            shuffle=True, num_workers=config.num_workers)
+                                                   shuffle=True, num_workers=config.num_workers)
         val_loader = torch.utils.data.DataLoader(valset, batch_size=config.val_batch_size,
-            shuffle=False, num_workers=config.num_workers)
+                                                 shuffle=False, num_workers=config.num_workers)
         # for early stopping
         count = 0
         init_val_loss = float('inf')
@@ -93,7 +88,7 @@ def main(config):
             batch_losses = []
             for i, data in enumerate(train_loader):
                 images = data['image'].to(device)
-                labels = data['annotations'].to(device).float()
+                labels = data['annotations'].to(device, dtype=torch.float32).float()
                 outputs = model(images)
                 outputs = outputs.view(-1, 10, 1)
 
@@ -106,8 +101,10 @@ def main(config):
 
                 optimizer.step()
 
-                print('Epoch: %d/%d | Step: %d/%d | Training EMD loss: %.4f' % (epoch + 1, config.epochs, i + 1, len(trainset) // config.train_batch_size + 1, loss.data[0]))
-                writer.add_scalar('batch train loss', loss.data[0], i + epoch * (len(trainset) // config.train_batch_size + 1))
+                print('Epoch: %d/%d | Step: %d/%d | Training EMD loss: %.4f' % (
+                    epoch + 1, config.epochs, i + 1, len(trainset) // config.train_batch_size + 1, loss.data[0]))
+                writer.add_scalar('batch train loss', loss.data[0],
+                                  i + epoch * (len(trainset) // config.train_batch_size + 1))
 
             avg_loss = sum(batch_losses) / (len(trainset) // config.train_batch_size + 1)
             train_losses.append(avg_loss)
@@ -137,7 +134,8 @@ def main(config):
             avg_val_loss = sum(batch_val_losses) / (len(valset) // config.val_batch_size + 1)
             val_losses.append(avg_val_loss)
             print('Epoch %d completed. Mean EMD loss on val set: %.4f.' % (epoch + 1, avg_val_loss))
-            writer.add_scalars('epoch losses', {'epoch train loss': avg_loss, 'epoch val loss': avg_val_loss}, epoch + 1)
+            writer.add_scalars('epoch losses', {'epoch train loss': avg_loss, 'epoch val loss': avg_val_loss},
+                               epoch + 1)
 
             # Use early stopping to monitor training
             if avg_val_loss < init_val_loss:
@@ -153,7 +151,8 @@ def main(config):
             elif avg_val_loss >= init_val_loss:
                 count += 1
                 if count == config.early_stopping_patience:
-                    print('Val EMD loss has not decreased in %d epochs. Training terminated.' % config.early_stopping_patience)
+                    print(
+                        'Val EMD loss has not decreased in %d epochs. Training terminated.' % config.early_stopping_patience)
                     break
 
         print('Training completed.')
@@ -175,7 +174,8 @@ def main(config):
         # compute mean score
         test_transform = val_transform
         testset = AVADataset(csv_file=config.test_csv_file, root_dir=config.img_path, transform=val_transform)
-        test_loader = torch.utils.data.DataLoader(testset, batch_size=config.test_batch_size, shuffle=False, num_workers=config.num_workers)
+        test_loader = torch.utils.data.DataLoader(testset, batch_size=config.test_batch_size, shuffle=False,
+                                                  num_workers=config.num_workers)
 
         mean_preds = []
         std_preds = []
@@ -195,7 +195,6 @@ def main(config):
 
 
 if __name__ == '__main__':
-
     parser = argparse.ArgumentParser()
 
     # input parameters
@@ -205,7 +204,7 @@ if __name__ == '__main__':
     parser.add_argument('--test_csv_file', type=str, default='./data/test_labels.csv')
 
     # training parameters
-    parser.add_argument('--train',action='store_true')
+    parser.add_argument('--train', action='store_true')
     parser.add_argument('--test', action='store_true')
     parser.add_argument('--decay', action='store_true')
     parser.add_argument('--conv_base_lr', type=float, default=5e-3)
@@ -230,4 +229,3 @@ if __name__ == '__main__':
     config = parser.parse_args()
 
     main(config)
-

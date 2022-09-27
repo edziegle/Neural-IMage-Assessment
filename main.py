@@ -22,7 +22,13 @@ from model.model import *
 
 
 def main(config):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.is_available():
+        device_type = "cuda"
+        print("Using GPU")
+    else:
+        device_type = "cpu"
+        print("Using CPU")
+    device = torch.device(device_type)
     writer = SummaryWriter()
 
     train_transform = transforms.Compose(

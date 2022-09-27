@@ -22,12 +22,7 @@ from model.model import *
 
 
 def main(config):
-    if hasattr(torch.backends, "mps"):
-        if torch.backends.mps.is_available() and torch.backends.mps.is_built():
-            device = torch.device("mps")
-            print("Using MPS backend")
-    else:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     writer = SummaryWriter()
 
     train_transform = transforms.Compose(

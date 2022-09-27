@@ -22,13 +22,22 @@ from model.model import *
 
 
 def main(config):
-    if torch.cuda.is_available():
-        device_type = "cuda"
-        print("Using GPU")
+    if os.getenv("LOCAL"):
+        print("Running locally")
+        if torch.cuda.is_available():
+            device_type = "cuda"
+            print("Using GPU")
+        else:
+            device_type = "cpu"
+            print("Using CPU")
+        device = torch.device(device_type)
     else:
-        device_type = "cpu"
-        print("Using CPU")
-    device = torch.device(device_type)
+        print("Running on SageMaker")
+        import torch_xla
+        import torch_xla.core.xla_model as xm
+
+        device = xm.xla_device()
+
     writer = SummaryWriter()
 
     train_transform = transforms.Compose(
@@ -71,13 +80,22 @@ def main(config):
 
     conv_base_lr = config.conv_base_lr
     dense_lr = config.dense_lr
-    optimizer = optim.SGD(
-        [
-            {"params": model.features.parameters(), "lr": conv_base_lr},
-            {"params": model.classifier.parameters(), "lr": dense_lr},
-        ],
-        momentum=0.9,
-    )
+    if os.getenv("LOCAL"):
+        optimizer = optim.SGD(
+            [
+                {"params": model.features.parameters(), "lr": conv_base_lr},
+                {"params": model.classifier.parameters(), "lr": dense_lr},
+            ],
+            momentum=0.9,
+        )
+    else:
+        optimizer = torch_xla.amp.syncfree.SGD(
+            [
+                {"params": model.features.parameters(), "lr": conv_base_lr},
+                {"params": model.classifier.parameters(), "lr": dense_lr},
+            ],
+            momentum=0.9,
+        )
 
     param_num = 0
     for param in model.parameters():
@@ -129,7 +147,10 @@ def main(config):
 
                 loss.backward()
 
-                optimizer.step()
+                if os.getenv("LOCAL"):
+                    optimizer.step()
+                else:
+                    xm.optimizer_step(optimizer)
 
                 print(
                     "Epoch: %d/%d | Step: %d/%d | Training EMD loss: %.4f"
@@ -147,6 +168,9 @@ def main(config):
                     i + epoch * (len(trainset) // config.train_batch_size + 1),
                 )
 
+            if not os.getenv("LOCAL"):
+                xm.mark_step()
+
             avg_loss = sum(batch_losses) / (
                 len(trainset) // config.train_batch_size + 1
             )
@@ -162,13 +186,34 @@ def main(config):
                     dense_lr = dense_lr * config.lr_decay_rate ** (
                         (epoch + 1) / config.lr_decay_freq
                     )
-                    optimizer = optim.SGD(
-                        [
-                            {"params": model.features.parameters(), "lr": conv_base_lr},
-                            {"params": model.classifier.parameters(), "lr": dense_lr},
-                        ],
-                        momentum=0.9,
-                    )
+                    if os.getenv("LOCAL"):
+                        optimizer = optim.SGD(
+                            [
+                                {
+                                    "params": model.features.parameters(),
+                                    "lr": conv_base_lr,
+                                },
+                                {
+                                    "params": model.classifier.parameters(),
+                                    "lr": dense_lr,
+                                },
+                            ],
+                            momentum=0.9,
+                        )
+                    else:
+                        optimizer = torch_xla.amp.syncfree.SGD(
+                            [
+                                {
+                                    "params": model.features.parameters(),
+                                    "lr": conv_base_lr,
+                                },
+                                {
+                                    "params": model.classifier.parameters(),
+                                    "lr": dense_lr,
+                                },
+                            ],
+                            momentum=0.9,
+                        )
 
             # do validation after each epoch
             batch_val_losses = []
@@ -201,10 +246,16 @@ def main(config):
                 print("Saving model...")
                 if not os.path.exists(config.ckpt_path):
                     os.makedirs(config.ckpt_path)
-                torch.save(
-                    model.state_dict(),
-                    os.path.join(config.ckpt_path, "epoch-%d.pth" % (epoch + 1)),
-                )
+                if os.getenv("LOCAL"):
+                    torch.save(
+                        model.state_dict(),
+                        os.path.join(config.ckpt_path, "epoch-%d.pth" % (epoch + 1)),
+                    )
+                else:
+                    xm.save(
+                        model.state_dict(),
+                        os.path.join(config.ckpt_path, "epoch-%d.pth" % (epoch + 1)),
+                    )
                 print("Done.\n")
                 # reset count
                 count = 0

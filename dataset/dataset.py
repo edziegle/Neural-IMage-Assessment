@@ -1,26 +1,6 @@
 """
 file - dataset.py
 Customized dataset class to loop through the AVA dataset and apply needed image augmentations for training.
-
-Copyright (C) Yunxiao Shi 2017 - 2021
-NIMA is released under the MIT license. See LICENSE for the fill license text.
-"""
-
-import os
-from io import BytesIO
-
-import pandas as pd
-from PIL import Image
-import boto3
-
-import torch
-from torch.utils import data
-import torchvision.transforms as transforms
-
-
-"""
-file - dataset.py
-Customized dataset class to loop through the AVA dataset and apply needed image augmentations for training.
 Copyright (C) Yunxiao Shi 2017 - 2021
 NIMA is released under the MIT license. See LICENSE for the fill license text.
 """
@@ -32,7 +12,6 @@ from PIL import Image
 import boto3
 from io import BytesIO
 
-import torch
 from torch.utils import data
 import torchvision.transforms as transforms
 

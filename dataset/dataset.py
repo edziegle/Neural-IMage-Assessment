@@ -50,7 +50,6 @@ class AVADataset(data.Dataset):
         annotations = self.annotations.iloc[idx, 1:].to_numpy()
         annotations = annotations.astype("float").reshape(-1, 1)
         sample = {"img_id": img_name, "image": image, "annotations": annotations}
-        print(f"Loading {sample}")
 
         if self.transform:
             sample["image"] = self.transform(sample["image"])
